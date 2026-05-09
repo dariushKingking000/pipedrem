@@ -1,4 +1,4 @@
-name: Install Node-RED Nodes ✅
+name: Install Node-RED Nodes ✅ FIXED
 
 on: 
   push:
@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write  # 👈 این خط مهمه!
+  contents: write
 
 jobs:
   build:
@@ -14,16 +14,16 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Setup Node.js
+    - name: Setup Node.js (NO CACHE)
       uses: actions/setup-node@v4
       with:
         node-version: '20'
-        cache: 'npm'
+        cache: false  # 👈 حل مشکل cache
         
-    - name: Install all nodes
+    - name: Install nodes
+      working-directory: ./temp-nodes
       run: |
-        mkdir -p temp-nodes nodes
-        cd temp-nodes
+        mkdir -p ../nodes
         npm init -y
         npm install \
           node-red-dashboard \
@@ -31,34 +31,35 @@ jobs:
           node-red-contrib-puppeteer \
           node-red-contrib-playwright \
           node-red-node-email \
-          --save --omit=dev
+          --save --omit=dev --no-fund --no-audit
         
-    - name: Create zips
+    - name: Zip nodes
       run: |
+        mkdir -p nodes
         cd temp-nodes/node_modules
-        echo "📁 Available nodes:"
-        ls -la | grep "node-red"
         
         for node in node-red-dashboard node-red-node-ui-webcam node-red-contrib-puppeteer node-red-contrib-playwright node-red-node-email; do
           if [ -d "$node" ]; then
-            echo "📦 Zipping $node..."
-            (cd "$node" && zip -r "../../../nodes/${node}.zip" . -x "node_modules/*" "*.git*" "test*" "tests*" "coverage*")
-            echo "✅ $node: $(du -h ../../../nodes/${node}.zip | cut -f1)"
-          else
-            echo "❌ $node missing"
+            echo "📦 $node..."
+            (cd "$node" && zip -r "../../nodes/${node}.zip" . -x "node_modules/*" "*.git*" "test*" "tests*" "coverage*" ".*")
+            ls -lh "../../nodes/${node}.zip"
           fi
         done
         
-    - name: Commit & Push
+    - name: Commit
       run: |
         git config user.name "GitHub Action"
         git config user.email "action@github.com"
         git add nodes/
-        git commit -m "Add Node-RED nodes (zipped) ✅" || echo "No changes"
-        git push
+        if git diff --staged --quiet; then
+          echo "No new files"
+        else
+          git commit -m "Add Node-RED nodes ✅"
+          git push
+        fi
         
-    - name: Upload Artifacts
+    - name: Upload
       uses: actions/upload-artifact@v4
       with:
-        name: node-red-nodes
+        name: nodes
         path: nodes/
