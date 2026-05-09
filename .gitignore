@@ -1,0 +1,8 @@
+node_modules/
+bot.js
+package.json
+package-lock.json
+command.txt
+last_command.txt
+command_pipe.txt
+response.txt
