@@ -1,4 +1,4 @@
-name: Install Node-RED Nodes ✅ FIXED
+name: Node-RED Nodes ✅ FINAL
 
 on: 
   push:
@@ -14,52 +14,43 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Setup Node.js (NO CACHE)
+    - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
         node-version: '20'
-        cache: false  # 👈 حل مشکل cache
         
-    - name: Install nodes
-      working-directory: ./temp-nodes
+    - name: Create & Install
       run: |
-        mkdir -p ../nodes
-        npm init -y
-        npm install \
+        mkdir -p temp-nodes nodes
+        cd temp-nodes
+        npm init -y -s
+        npm ci --omit=dev --no-audit --no-fund || npm install \
           node-red-dashboard \
           node-red-node-ui-webcam \
           node-red-contrib-puppeteer \
           node-red-contrib-playwright \
           node-red-node-email \
-          --save --omit=dev --no-fund --no-audit
+          --save --omit=dev --no-audit --no-fund
         
-    - name: Zip nodes
+    - name: Zip
       run: |
-        mkdir -p nodes
         cd temp-nodes/node_modules
-        
         for node in node-red-dashboard node-red-node-ui-webcam node-red-contrib-puppeteer node-red-contrib-playwright node-red-node-email; do
-          if [ -d "$node" ]; then
-            echo "📦 $node..."
+          [ -d "$node" ] && {
+            echo "📦 $node"
             (cd "$node" && zip -r "../../nodes/${node}.zip" . -x "node_modules/*" "*.git*" "test*" "tests*" "coverage*" ".*")
-            ls -lh "../../nodes/${node}.zip"
-          fi
+            du -h "../../nodes/${node}.zip"
+          }
         done
         
     - name: Commit
       run: |
-        git config user.name "GitHub Action"
-        git config user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git config --local user.email "action@github.com"
         git add nodes/
-        if git diff --staged --quiet; then
-          echo "No new files"
-        else
-          git commit -m "Add Node-RED nodes ✅"
-          git push
-        fi
+        git diff --staged --quiet || git commit -m "Node-RED nodes added ✅" && git push
         
-    - name: Upload
-      uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v4
       with:
-        name: nodes
+        name: Node-RED-Nodes
         path: nodes/
