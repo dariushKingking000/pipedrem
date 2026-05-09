@@ -13,54 +13,39 @@ jobs:
       with:
         node-version: '20'
         
-    - name: Create temp directory
-      run: mkdir -p temp-nodes
+    - name: Create directories
+      run: mkdir -p temp-nodes nodes
       
-    - name: Install & Zip node-red-dashboard
+    - name: Install all nodes
       run: |
         cd temp-nodes
         npm init -y
-        npm install node-red-dashboard --save --production
-        zip -r ../nodes/node-red-dashboard.zip node_modules/node-red-dashboard package.json package-lock.json
-        cd ..
-        mkdir -p nodes
+        npm install \
+          node-red-dashboard \
+          node-red-node-ui-webcam \
+          node-red-contrib-puppeteer \
+          node-red-contrib-playwright \
+          node-red-node-email \
+          --save --omit=dev --verbose
         
-    - name: Install & Zip node-red-node-ui-webcam
+    - name: Create individual zips
       run: |
         cd temp-nodes
-        npm install node-red-node-ui-webcam --save --production
-        zip -r ../nodes/node-red-node-ui-webcam.zip node_modules/node-red-node-ui-webcam
+        for node in node-red-dashboard node-red-node-ui-webcam node-red-contrib-puppeteer node-red-contrib-playwright node-red-node-email; do
+          if [ -d "node_modules/$node" ]; then
+            zip -r "../nodes/${node}.zip" "node_modules/$node" package.json package-lock.json -x "node_modules/*/*" -i "node_modules/$node/*"
+            echo "✅ $node zipped"
+          fi
+        done
         cd ..
         
-    - name: Install & Zip node-red-contrib-puppeteer
+    - name: Commit to repo
       run: |
-        cd temp-nodes
-        npm install node-red-contrib-puppeteer --save --production
-        zip -r ../nodes/node-red-contrib-puppeteer.zip node_modules/node-red-contrib-puppeteer
-        cd ..
-        
-    - name: Install & Zip node-red-contrib-playwright
-      run: |
-        cd temp-nodes
-        npm install node-red-contrib-playwright --save --production
-        zip -r ../nodes/node-red-contrib-playwright.zip node_modules/node-red-contrib-playwright
-        cd ..
-        
-    - name: Install & Zip node-red-node-email
-      run: |
-        cd temp-nodes
-        npm install node-red-node-email --save --production
-        zip -r ../nodes/node-red-node-email.zip node_modules/node-red-node-email
-        cd ..
-        
-    - name: Cleanup & Commit
-      run: |
-        rm -rf temp-nodes
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-        git add nodes/ || true
-        git commit -m "Add Node-RED nodes zips" || echo "No changes"
-        git push || echo "Push skipped"
+        git add nodes/
+        git commit -m "Add Node-RED nodes zips" || echo "No new files"
+        git push
         
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
