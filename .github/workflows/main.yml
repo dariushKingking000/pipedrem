@@ -1,4 +1,4 @@
-name: Node-RED Nodes ✅ FINAL
+name: Node-RED Nodes ✅ PERFECT
 
 on: 
   push:
@@ -19,38 +19,42 @@ jobs:
       with:
         node-version: '20'
         
-    - name: Create & Install
+    - name: Install
       run: |
-        mkdir -p temp-nodes nodes
-        cd temp-nodes
+        mkdir -p nodes
+        cd nodes
         npm init -y -s
-        npm ci --omit=dev --no-audit --no-fund || npm install \
+        npm install \
           node-red-dashboard \
           node-red-node-ui-webcam \
           node-red-contrib-puppeteer \
           node-red-contrib-playwright \
-          node-red-node-email \
-          --save --omit=dev --no-audit --no-fund
+          node-red-node-email
         
-    - name: Zip
+    - name: Zip each node
       run: |
-        cd temp-nodes/node_modules
+        cd nodes/node_modules
         for node in node-red-dashboard node-red-node-ui-webcam node-red-contrib-puppeteer node-red-contrib-playwright node-red-node-email; do
-          [ -d "$node" ] && {
-            echo "📦 $node"
-            (cd "$node" && zip -r "../../nodes/${node}.zip" . -x "node_modules/*" "*.git*" "test*" "tests*" "coverage*" ".*")
-            du -h "../../nodes/${node}.zip"
-          }
+          if [ -d "$node" ]; then
+            echo "📦 Creating $node.zip"
+            mkdir -p "../../${node}"
+            rsync -a "$node/" "../../${node}/"
+            cd ../..
+            zip -r "${node}.zip" "$node" -x "*/node_modules/*" "*/test*" "*/tests*" "*/.git*" >/dev/null
+            rm -rf "$node"
+            echo "✅ $(du -h "${node}.zip" | cut -f1)"
+          fi
         done
         
     - name: Commit
       run: |
         git config --local user.name "GitHub Action"
         git config --local user.email "action@github.com"
-        git add nodes/
-        git diff --staged --quiet || git commit -m "Node-RED nodes added ✅" && git push
+        git add *.zip
+        git commit -m "Node-RED nodes ✅ $(date)" || echo "No changes"
+        git push
         
     - uses: actions/upload-artifact@v4
       with:
-        name: Node-RED-Nodes
-        path: nodes/
+        name: NodeRED-Nodes
+        path: '*.zip'
