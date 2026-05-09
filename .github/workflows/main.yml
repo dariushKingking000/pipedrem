@@ -1,6 +1,12 @@
-name: Install Node-RED Nodes and Zip
+name: Install Node-RED Nodes ✅
 
-on: [push, workflow_dispatch]
+on: 
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write  # 👈 این خط مهمه!
 
 jobs:
   build:
@@ -12,12 +18,11 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: '20'
+        cache: 'npm'
         
-    - name: Create directories
-      run: mkdir -p temp-nodes nodes
-      
     - name: Install all nodes
       run: |
+        mkdir -p temp-nodes nodes
         cd temp-nodes
         npm init -y
         npm install \
@@ -26,28 +31,33 @@ jobs:
           node-red-contrib-puppeteer \
           node-red-contrib-playwright \
           node-red-node-email \
-          --save --omit=dev --verbose
+          --save --omit=dev
         
-    - name: Create individual zips
+    - name: Create zips
       run: |
-        cd temp-nodes
+        cd temp-nodes/node_modules
+        echo "📁 Available nodes:"
+        ls -la | grep "node-red"
+        
         for node in node-red-dashboard node-red-node-ui-webcam node-red-contrib-puppeteer node-red-contrib-playwright node-red-node-email; do
-          if [ -d "node_modules/$node" ]; then
-            zip -r "../nodes/${node}.zip" "node_modules/$node" package.json package-lock.json -x "node_modules/*/*" -i "node_modules/$node/*"
-            echo "✅ $node zipped"
+          if [ -d "$node" ]; then
+            echo "📦 Zipping $node..."
+            (cd "$node" && zip -r "../../../nodes/${node}.zip" . -x "node_modules/*" "*.git*" "test*" "tests*" "coverage*")
+            echo "✅ $node: $(du -h ../../../nodes/${node}.zip | cut -f1)"
+          else
+            echo "❌ $node missing"
           fi
         done
-        cd ..
         
-    - name: Commit to repo
+    - name: Commit & Push
       run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
+        git config user.name "GitHub Action"
+        git config user.email "action@github.com"
         git add nodes/
-        git commit -m "Add Node-RED nodes zips" || echo "No new files"
+        git commit -m "Add Node-RED nodes (zipped) ✅" || echo "No changes"
         git push
         
-    - name: Upload artifacts
+    - name: Upload Artifacts
       uses: actions/upload-artifact@v4
       with:
         name: node-red-nodes
