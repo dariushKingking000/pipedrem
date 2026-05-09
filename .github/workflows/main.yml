@@ -13,7 +13,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Create .gitignore FIRST
+    - name: Create .gitignore
       run: |
         cat > .gitignore << EOF
         node_modules/
@@ -29,19 +29,20 @@ jobs:
         chrome-user-data-*
         EOF
     
-    - name: Install Chrome + FFmpeg (FINAL FIX)
+    - name: Install Chrome + FFmpeg (PERFECT)
       run: |
         sudo apt-get update -qq
         
-        # Essential deps (بدون libasound2)
+        # MINIMAL deps - فقط ضروری‌ها
         sudo apt-get install -y -qq \
-          wget gnupg xvfb x11-xkb-utils ffmpeg bc \
-          libxss1 libnss3 libatk-bridge2.0-0 libdrm2 \
-          libxkbcommon0 libatspi2.0-0 libxcomposite1 \
-          libxdamage1 libxrandr2 libgbm1 libpango-1.0-0 \
-          libcairo-gobject2 libgtk-3-0 libgconf-2-4
+          wget gnupg xvfb ffmpeg bc \
+          libnss3 libatk1.0-0 libatk-bridge2.0-0 \
+          libdrm2 libxkbcommon0 libatspi2.0-0 \
+          libxcomposite1 libxdamage1 libxrandr2 \
+          libgbm1 libpango-1.0-0 libcairo2 \
+          libgtk-3-0 libgdk-pixbuf2.0-0
         
-        # Chrome GPG (batch)
+        # Chrome GPG
         wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | \
           sudo gpg --dearmor --yes -o /usr/share/keyrings/google-chrome.gpg
         
@@ -51,13 +52,10 @@ jobs:
         sudo apt-get update -qq
         sudo apt-get install -y -qq google-chrome-stable
         
-        # Verify
         google-chrome --version
-        ffmpeg -version
-        
-        echo "✅ ALL INSTALLED!"
+        echo "✅ INSTALLED!"
     
-    - name: Install Node deps
+    - name: Install Node
       run: npm init -y && npm i puppeteer@latest
     
     - name: Setup Bot
@@ -71,131 +69,103 @@ jobs:
         let page = null;
         
         function wait(ms) {
-          return new Promise(resolve => setTimeout(resolve, ms));
+          return new Promise(r => setTimeout(r, ms));
         }
         
-        async function initBrowser() {
-          console.log("🚀 Browser...");
-          
+        async function init() {
+          console.log("🚀 Starting...");
           browser = await puppeteer.launch({
             headless: false,
             executablePath: '/usr/bin/google-chrome-stable',
             args: [
-              '--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage',
-              '--no-first-run','--no-zygote','--single-process',
-              '--disable-background-timer-throttling','--disable-extensions',
-              '--disable-gpu','--window-size=1920,1080',
-              '--disable-web-security'
+              '--no-sandbox','--disable-setuid-sandbox',
+              '--disable-dev-shm-usage','--no-first-run',
+              '--disable-gpu','--no-zygote',
+              '--window-size=1920,1080',
+              '--disable-web-security','--disable-extensions'
             ]
           });
           
           page = await browser.newPage();
-          await page.setViewport({ width: 1920, height: 1080 });
-          await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
-          
-          await page.goto("https://www.google.com", { 
-            waitUntil: 'domcontentloaded', 
-            timeout: 60000 
-          });
-          
-          await wait(2000);
+          await page.setViewport({width:1920,height:1080});
+          await page.goto("https://google.com",{waitUntil:'domcontentloaded'});
           console.log("✅ Ready!");
         }
         
         async function reconnect() {
-          try {
+          try{
             await page.bringToFront();
-            await page.evaluate(() => true);
             return true;
-          } catch(e) {
+          }catch(e){
             console.log("🔄 Reconnect...");
-            if (page) await page.close().catch(() => {});
-            if (browser) await browser.close().catch(() => {});
-            await initBrowser();
+            if(page) await page.close().catch(()=>{});  
+            if(browser) await browser.close().catch(()=>{});  
+            await init();
             return true;
           }
         }
         
-        async function screenshot() {
-          console.log("📸 Screenshot...");
+        async function screenshot(){
           await reconnect();
           await wait(1000);
-          
-          await page.screenshot({ path: 'screenshot.png' });
-          await page.screenshot({ path: 'screenshot-full.png', fullPage: true });
-          
-          const buffer = await page.screenshot({ type: 'png', fullPage: true });
-          fs.writeFileSync('screenshot-base64.txt', buffer.toString('base64'));
+          await page.screenshot({path:'screenshot.png'});
+          await page.screenshot({path:'screenshot-full.png',fullPage:true});
+          const buf = await page.screenshot({type:'png',fullPage:true});
+          fs.writeFileSync('screenshot-base64.txt',buf.toString('base64'));
         }
         
-        async function execute(cmd) {
-          console.log(`🔧 ${cmd}`);
+        async function cmd(c){
           await reconnect();
-          
-          if (cmd.startsWith("goto ")) {
-            await page.goto(cmd.slice(5).trim(), { waitUntil: 'domcontentloaded', timeout: 60000 });
-          } else if (cmd.startsWith("click ")) {
-            const [x, y] = cmd.slice(6).trim().split(",").map(Number);
-            await page.mouse.click(x, y);
-          } else if (cmd.startsWith("type ")) {
-            await page.keyboard.type(cmd.slice(5).trim());
-          } else if (cmd === "enter") {
-            await page.keyboard.press('Enter');
-          } else if (cmd === "copy") {
-            const text = await page.evaluate(() => document.body.innerText.slice(0, 50000));
-            fs.writeFileSync('page-text.txt', text);
+          if(c.startsWith("goto ")) await page.goto(c.slice(5),{waitUntil:'domcontentloaded'});
+          else if(c.startsWith("click ")) {
+            let [x,y]=c.slice(6).split(",").map(Number);
+            await page.mouse.click(x,y);
+          }
+          else if(c.startsWith("type ")) await page.keyboard.type(c.slice(5));
+          else if(c==="enter") await page.keyboard.press("Enter");
+          else if(c==="copy"){
+            let text=await page.evaluate(()=>document.body.innerText.slice(0,50000));
+            fs.writeFileSync('page-text.txt',text);
           }
         }
         
-        async function video(commands) {
-          console.log("🎥 Video...");
-          
-          if (fs.existsSync('frames')) fs.rmSync('frames', { recursive: true });
+        async function video(commands){
+          if(fs.existsSync('frames')) fs.rmSync('frames',{recursive:true});
           fs.mkdirSync('frames');
           
-          let frame = 0;
-          for(let cmd of commands) {
-            // 2 pre frames
-            for(let i = 0; i < 2; i++) {
+          let f=0;
+          for(let c of commands){
+            for(let i=0;i<2;i++){
               await reconnect();
-              await page.screenshot({ path: `frames/f${frame.toString().padStart(5,'0')}.png` });
-              frame++;
-              await wait(500);
+              await page.screenshot({path:`frames/f${f.toString().padStart(5,'0')}.png`});
+              f++; await wait(400);
             }
-            
-            await execute(cmd);
-            
-            // 4 post frames
-            for(let i = 0; i < 4; i++) {
+            await cmd(c);
+            for(let i=0;i<4;i++){
               await reconnect();
-              await page.screenshot({ path: `frames/f${frame.toString().padStart(5,'0')}.png` });
-              frame++;
-              await wait(500);
+              await page.screenshot({path:`frames/f${f.toString().padStart(5,'0')}.png`});
+              f++; await wait(400);
             }
           }
           
           await screenshot();
           
-          const videoFile = `video_${Date.now()}.mp4`;
-          execSync(`ffmpeg -y -r 8 -i frames/f%05d.png -c:v libx264 -crf 25 -pix_fmt yuv420p -vf "scale=1280:720" ${videoFile}`);
-          
-          fs.rmSync('frames', { recursive: true });
-          console.log(`✅ Video OK!`);
+          let v=`video_${Date.now()}.mp4`;
+          execSync(`ffmpeg -y -r 8 -i frames/f%05d.png -c:v libx264 -crf 25 -pix_fmt yuv420p -vf "scale=1280:720" ${v}`);
+          fs.rmSync('frames',{recursive:true});
         }
         
-        (async () => {
-          await initBrowser();
-          
-          while(true) {
-            if (fs.existsSync('command_pipe.txt')) {
-              let cmd = fs.readFileSync('command_pipe.txt', 'utf8').trim();
-              console.log(`🆕 ${cmd}`);
+        (async()=>{
+          await init();
+          while(1){
+            if(fs.existsSync('command_pipe.txt')){
+              let c=fs.readFileSync('command_pipe.txt','utf8').trim();
+              console.log(`🆕 ${c}`);
+              if(c==="exit") process.exit(0);
               
-              if (cmd === "exit") process.exit(0);
-              
-              let commands = cmd.split('\n').map(l=>l.trim()).filter(l=>l);
-              await video(commands);
-              fs.writeFileSync('response.txt', `✅ ${commands.length} OK`);
+              let cmds=c.split('\n').map(l=>l.trim()).filter(l=>l);
+              await video(cmds);
+              fs.writeFileSync('response.txt',`✅ ${cmds.length}`);
               fs.unlinkSync('command_pipe.txt');
             }
             await wait(1000);
@@ -203,22 +173,22 @@ jobs:
         })();
         EOF
     
-    - name: Bot LOOP
+    - name: Bot Main Loop
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         export DISPLAY=:99
-        Xvfb :99 -screen 0 1920x1080x24 -ac &
+        Xvfb :99 -screen 0 1920x1080x24 &
         
         git config --global user.name "Screenshot Bot"
         git config --global user.email "bot@github.com"
         
-        rm -rf *txt *png *mp4 frames/ 2>/dev/null || true
+        rm -rf *txt *png *mp4 frames/ 2>/dev/null
         
         timeout 7200 node bot.js &
         PID=$!
         echo "🤖 $PID"
-        sleep 45
+        sleep 30
         
         while true; do
           git fetch origin
@@ -230,15 +200,15 @@ jobs:
             
             if [ "$CONTENT" != "$LAST" ] && [ "$CONTENT" != "exit" ]; then
               echo "🆕 $CONTENT"
-              rm -rf *png *mp4 *txt frames/ 2>/dev/null || true
+              rm -rf *png *mp4 *txt frames/ 2>/dev/null
               echo "$CONTENT" > command_pipe.txt
               
               for i in {1..120}; do
-                [ -f response.txt ] && {
+                if [ -f response.txt ]; then
                   cat response.txt
                   rm -f response.txt command_pipe.txt
                   break
-                }
+                fi
                 sleep 2
               done
               
@@ -247,13 +217,14 @@ jobs:
                 [ -f "$f" ] && FILES="$FILES $f"
               done
               
-              [ -n "$FILES" ] && {
+              if [ -n "$FILES" ]; then
                 git add -f $FILES .gitignore bot.js
                 if ! git diff --staged --quiet; then
                   git commit -m "🎥 $(date +'%H:%M') | $CONTENT"
                   git push origin main -f
+                  echo "✅ PUSHED!"
                 fi
-              }
+              fi
               
               echo "$CONTENT" > last_command.txt
             fi
