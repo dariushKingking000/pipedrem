@@ -1,4 +1,4 @@
-name: Node-RED Nodes ✅ WORKING
+name: Node-RED Nodes ✅ PERFECT
 
 on: 
   push:
@@ -25,48 +25,64 @@ jobs:
         cd nodes
         npm init -y -s
         
-        # ✅ اینا کار می‌کنن
+        # ✅ Working Node-RED nodes
         npm install node-red-dashboard@3.6.6
         npm install node-red-node-email
         npm install node-red-contrib-web-worldmap
-        
-        # Browser tools (manual)
+
+        # ✅ Browser automation
         npm install puppeteer playwright --save-optional
 
-    - name: Create Custom Zips
+    - name: Create Zips in ROOT ✅
       run: |
         cd nodes
         
-        # Dashboard ✅
+        # Move any existing zips
+        mv ../*.zip . 2>/dev/null || true
+        
+        # 1. Dashboard ✅
         if [ -d "node_modules/node-red-dashboard" ]; then
           rsync -a node_modules/node-red-dashboard/ dashboard/
-          zip -r dashboard.zip dashboard -x "*/node_modules/*" >/dev/null
-          echo "✅ dashboard.zip $(du -h dashboard.zip | cut -f1)"
+          zip -r ../dashboard.zip dashboard -x "*/node_modules/*" >/dev/null 2>&1
+          echo "✅ dashboard.zip $(du -h ../dashboard.zip | cut -f1)"
           rm -rf dashboard
         fi
         
-        # Email ✅
+        # 2. Email ✅
         if [ -d "node_modules/node-red-node-email" ]; then
           rsync -a node_modules/node-red-node-email/ email/
-          zip -r email.zip email -x "*/node_modules/*" >/dev/null
-          echo "✅ email.zip $(du -h email.zip | cut -f1)"
+          zip -r ../email.zip email -x "*/node_modules/*" >/dev/null 2>&1
+          echo "✅ email.zip $(du -h ../email.zip | cut -f1)"
           rm -rf email
         fi
         
-        # Puppeteer/Playwright bundle
-        mkdir -p browser-tools
-        cp -r node_modules/puppeteer browser-tools/
-        cp -r node_modules/playwright browser-tools/
-        echo '{"name":"browser-tools","version":"1.0.0"}' > browser-tools/package.json
-        zip -r browser-tools.zip browser-tools -x "*/node_modules/*" >/dev/null
+        # 3. Worldmap ✅
+        if [ -d "node_modules/node-red-contrib-web-worldmap" ]; then
+          rsync -a node_modules/node-red-contrib-web-worldmap/ worldmap/
+          zip -r ../worldmap.zip worldmap -x "*/node_modules/*" >/dev/null 2>&1
+          echo "✅ worldmap.zip $(du -h ../worldmap.zip | cut -f1)"
+          rm -rf worldmap
+        fi
+        
+        # 4. Browser Tools (Puppeteer + Playwright) ✅
+        mkdir -p ../browser-tools
+        [ -d "node_modules/puppeteer" ] && rsync -a node_modules/puppeteer/ ../browser-tools/ || true
+        [ -d "node_modules/playwright" ] && rsync -a node_modules/playwright/ ../browser-tools/ || true
+        echo '{"name":"browser-tools","version":"1.0.0"}' > ../browser-tools/package.json
+        cd ..
+        zip -r browser-tools.zip browser-tools -x "*/node_modules/*" >/dev/null 2>&1
         echo "✅ browser-tools.zip $(du -h browser-tools.zip | cut -f1)"
-        rm -rf browser-tools
+        rm -rf browser-tools nodes
 
-    - name: Commit
+    - name: Commit & Push
       run: |
+        echo "📁 Files in root:"
         ls -la *.zip
+        echo "📊 Sizes:"
+        du -h *.zip | sort -hr
+        
         git config --local user.name "GitHub Action"
         git config --local user.email "action@github.com"
         git add *.zip
-        git commit -m "✅ 3x Node-RED + Browser Tools $(date)" || echo "No files"
+        git commit -m "✅ $(ls *.zip | wc -l)x Node-RED zips $(date)" || echo "No new files"
         git push
