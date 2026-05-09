@@ -26,17 +26,16 @@ jobs:
         response.txt
         frames/
         /tmp/
-        chrome-user-data-*
         EOF
     
-    - name: Install Chrome + FFmpeg (FIXED)
+    - name: Install Chrome + FFmpeg
       run: |
         sudo apt-get update -qq
         sudo apt-get install -y -qq wget gnupg xvfb x11-xkb-utils ffmpeg bc \
-          libnss3 libatk1.0-0 libatk-bridge2.0-0 libdrm2 libxkbcommon0 \
-          libatspi2.0-0 libxcomposite1 libxdamage1 libxrandr2 libgbm1 \
-          libpango-1.0-0 libcairo2 libgtk-3-0 libgdk-pixbuf2.0-0
+          libnss3 libatk1.0-0 libdrm2 libxkbcommon0 libatspi2.0-0 \
+          libxcomposite1 libxdamage1 libxrandr2 libgbm1 libgtk-3-0
         
+        # Chrome GPG fix
         wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | \
           sudo gpg --dearmor --yes -o /usr/share/keyrings/google-chrome.gpg
         
@@ -45,13 +44,11 @@ jobs:
         
         sudo apt-get update -qq
         sudo apt-get install -y -qq google-chrome-stable
-        
-        echo "✅ Chrome: $(google-chrome --version)"
     
-    - name: Install Node deps
+    - name: Install Node
       run: npm init -y && npm i puppeteer@latest
     
-    - name: Setup Bot (STEALTH + PIPEDREAM)
+    - name: Setup Bot (TargetClosed FIX)
       run: |
         cat > bot.js << 'EOF'
         const puppeteer = require("puppeteer");
@@ -60,146 +57,199 @@ jobs:
         
         let browser = null;
         let page = null;
+        let retries = 0;
         
         function wait(ms) {
           return new Promise(resolve => setTimeout(resolve, ms));
         }
         
-        async function initBrowser() {
-          console.log("🚀 راه‌اندازی...");
-          browser = await puppeteer.launch({
-            headless: false,
-            executablePath: '/usr/bin/google-chrome-stable',
-            args: [
-              '--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage',
-              '--no-first-run','--no-service-autorun','--no-zygote','--single-process',
-              '--password-store=basic','--window-size=1920,1080',
-              '--disable-web-security','--disable-features=VizDisplayCompositor',
-              '--disable-gpu','--disable-extensions'
-            ]
-          });
-          
-          page = await browser.newPage();
-          await page.setViewport({ width: 1920, height: 1080 });
-          
-          // STEALTH MODE
-          await page.evaluateOnNewDocument(() => {
-            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-            Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
-            Object.defineProperty(navigator, 'languages', { get: () => ['fa-IR', 'fa', 'en-US', 'en'] });
-            window.chrome = { runtime: {} };
-            const originalQuery = window.navigator.permissions.query;
-            window.navigator.permissions.query = (parameters) => (
-              parameters.name === 'notifications' ?
-                Promise.resolve({ state: Notification.permission }) :
-                originalQuery(parameters)
-            );
-          });
-          
-          // PIPEDREAM PAGE + HUMAN MOVEMENT
-          await page.goto("https://pipedream.com/auth/signup", { 
-            waitUntil: 'networkidle0', 
-            timeout: 60000 
-          });
-          await wait(10000);
-          await page.mouse.move(100, 100);
-          console.log("✅ آماده Pipedream!");
+        async function safeLaunch() {
+          try {
+            console.log("🚀 Launch (attempt " + (retries + 1) + ")");
+            
+            browser = await puppeteer.launch({
+              headless: false,
+              executablePath: '/usr/bin/google-chrome-stable',
+              args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-accelerated-2d-canvas',
+                '--no-first-run',
+                '--no-zygote',
+                '--single-process',
+                '--disable-gpu',
+                '--disable-background-timer-throttling',
+                '--disable-backgrounding-occluded-windows',
+                '--disable-renderer-backgrounding',
+                '--disable-extensions',
+                '--disable-default-apps',
+                '--disable-plugins',
+                '--disable-hang-monitor',
+                '--disable-prompt-on-repost',
+                '--disable-client-side-phishing-detection',
+                '--disable-sync',
+                '--metrics-recording-only',
+                '--no-default-browser-check',
+                '--disable-popup-blocking',
+                '--window-size=1920,1080',
+                '--disable-web-security',
+                '--remote-debugging-port=9222'
+              ],
+              timeout: 60000
+            });
+            
+            page = await browser.newPage();
+            await page.setViewport({ width: 1920, height: 1080 });
+            
+            // Stealth
+            await page.evaluateOnNewDocument(() => {
+              Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+              Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+              window.chrome = { runtime: {} };
+            });
+            
+            console.log("✅ Browser OK!");
+            retries = 0;
+            return true;
+            
+          } catch (e) {
+            console.error("❌ Launch failed:", e.message);
+            retries++;
+            if (retries < 3) {
+              await wait(5000);
+              return await safeLaunch();
+            }
+            throw e;
+          }
         }
         
-        async function reconnectPage() {
+        async function initBrowser() {
+          await safeLaunch();
+          
+          // Pipedream + human movement
           try {
+            await page.goto("https://pipedream.com/auth/signup", { 
+              waitUntil: 'networkidle0', 
+              timeout: 60000 
+            });
+            await wait(8000);
+            await page.mouse.move(100, 100);
+            console.log("✅ Pipedream loaded!");
+          } catch (e) {
+            console.log("⚠️ Pipedream fallback to Google");
+            await page.goto("https://google.com", { waitUntil: 'domcontentloaded' });
+          }
+        }
+        
+        async function reconnect() {
+          try {
+            if (!browser || browser.isConnected() === false) throw new Error("Browser dead");
             await page.bringToFront();
-            await page.evaluate(() => true);
+            await page.evaluate(() => document.readyState === 'complete');
             return true;
-          } catch(e) {
-            console.log("🔄 Reconnect...");
+          } catch (e) {
+            console.log("🔄 Full reconnect...");
             if (page) await page.close().catch(() => {});
-            if (browser) await browser.close().catch(() => {});
-            await initBrowser();
+            await safeLaunch();
+            
+            // Reload page
+            await page.goto("https://pipedream.com/auth/signup", { 
+              waitUntil: 'networkidle0', 
+              timeout: 30000 
+            });
+            await wait(3000);
             return true;
           }
         }
         
         async function takeScreenshot() {
           console.log("📸 Screenshot...");
-          await reconnectPage();
-          await wait(1000);
-          await page.screenshot({ path: 'screenshot.png', type: 'png' });
-          await page.screenshot({ path: 'screenshot-full.png', fullPage: true, type: 'png' });
-          const buffer = await page.screenshot({ type: 'png' });
+          await reconnect();
+          await wait(1500);
+          
+          await page.screenshot({ path: 'screenshot.png' });
+          await page.screenshot({ path: 'screenshot-full.png', fullPage: true });
+          
+          const buffer = await page.screenshot({ type: 'png', fullPage: true });
           fs.writeFileSync("screenshot-base64.txt", buffer.toString('base64'));
         }
         
         async function executeCommand(cmd) {
           console.log(`🔧 ${cmd}`);
-          await reconnectPage();
+          await reconnect();
           
           if (cmd.startsWith("click ")) {
             const [x, y] = cmd.slice(6).trim().split(",").map(Number);
             await page.mouse.move(x + Math.random()*10-5, y + Math.random()*10-5);
             await wait(100);
-            await page.mouse.click(x, y, { delay: 50 });
+            await page.mouse.click(x, y);
           } else if (cmd.startsWith("type ")) {
-            const text = cmd.slice(5).trim();
-            await page.keyboard.type(text, { delay: 80 });
+            await page.keyboard.type(cmd.slice(5).trim(), { delay: 80 });
           } else if (cmd === "enter") {
-            await page.keyboard.press('Enter', { delay: 50 });
+            await page.keyboard.press('Enter');
           } else if (cmd.startsWith("goto ")) {
-            await page.goto(cmd.slice(5).trim(), { waitUntil: 'networkidle0', timeout: 60000 });
+            await page.goto(cmd.slice(5).trim(), { waitUntil: 'networkidle0' });
           }
         }
         
         async function recordVideo(commands) {
-          console.log("🎥 Video...");
+          console.log("🎥 Recording...");
           
           if (fs.existsSync('frames')) fs.rmSync('frames', { recursive: true });
           fs.mkdirSync('frames');
           
           let frame = 0;
           for(let cmd of commands) {
-            // Pre frames
+            // 3 pre-frames
             for(let i = 0; i < 3; i++) {
-              await reconnectPage();
+              await reconnect();
               await page.screenshot({ path: `frames/f${frame.toString().padStart(5,'0')}.png` });
               frame++;
-              await wait(500);
+              await wait(400);
             }
             
             await executeCommand(cmd);
             
-            // Post frames
-            for(let i = 0; i < 7; i++) {
-              await reconnectPage();
+            // 5 post-frames
+            for(let i = 0; i < 5; i++) {
+              await reconnect();
               await page.screenshot({ path: `frames/f${frame.toString().padStart(5,'0')}.png` });
               frame++;
-              await wait(500);
+              await wait(400);
             }
           }
           
           await takeScreenshot();
           
           const video = `video_${Date.now()}.mp4`;
-          execSync(`ffmpeg -y -r 12 -i frames/f%05d.png -c:v libx264 -crf 23 -pix_fmt yuv420p ${video}`);
-          console.log(`✅ Video: ${fs.statSync(video).size/1024/1024}MB`);
+          execSync(`ffmpeg -y -r 10 -i frames/f%05d.png -c:v libx264 -crf 23 -pix_fmt yuv420p ${video}`);
           
           fs.rmSync('frames', { recursive: true });
+          console.log(`✅ ${frame} frames -> ${video}`);
         }
         
         (async () => {
-          await initBrowser();
-          while(true) {
-            if (fs.existsSync('command_pipe.txt')) {
-              let cmd = fs.readFileSync('command_pipe.txt', 'utf8').trim();
-              console.log(`🆕 ${cmd}`);
-              
-              if (cmd === "exit") process.exit(0);
-              
-              let commands = cmd.split('\n').map(l=>l.trim()).filter(l=>l);
-              await recordVideo(commands);
-              fs.writeFileSync('response.txt', `✅ ${commands.length} OK`);
-              fs.unlinkSync('command_pipe.txt');
+          try {
+            await initBrowser();
+            
+            while(true) {
+              if (fs.existsSync('command_pipe.txt')) {
+                let cmd = fs.readFileSync('command_pipe.txt', 'utf8').trim();
+                console.log(`🆕 ${cmd}`);
+                
+                if (cmd === "exit") process.exit(0);
+                
+                let commands = cmd.split('\n').map(l=>l.trim()).filter(l=>l);
+                await recordVideo(commands);
+                fs.writeFileSync('response.txt', `✅ ${commands.length} cmds | ${commands.length * 8}s`);
+                fs.unlinkSync('command_pipe.txt');
+              }
+              await wait(1000);
             }
-            await wait(500);
+          } catch(e) {
+            console.error("FATAL:", e);
+            process.exit(1);
           }
         })();
         EOF
@@ -208,18 +258,19 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
+        # Xvfb stable
         export DISPLAY=:99
-        Xvfb :99 -screen 0 1920x1080x24 > /dev/null 2>&1 &
+        sudo Xvfb :99 -screen 0 1920x1080x24 -ac +extension GLX +render -noreset &
         
         git config --global user.name "Screenshot Bot"
         git config --global user.email "bot@github.com"
         
-        rm -rf *txt *png *mp4 frames/ 2>/dev/null || true
+        rm -rf *txt *png *mp4 frames/ 2>/dev/null
         
         timeout 7200 node bot.js &
         PID=$!
-        echo "🤖 $PID"
-        sleep 45
+        echo "🤖 PID: $PID"
+        sleep 60  # بیشتر صبر کن
         
         while true; do
           git fetch origin
@@ -230,31 +281,30 @@ jobs:
             LAST=$(cat last_command.txt 2>/dev/null || echo "")
             
             if [ "$CONTENT" != "$LAST" ] && [ "$CONTENT" != "exit" ]; then
-              echo "🆕 $CONTENT"
-              rm -rf *png *mp4 *txt frames/ 2>/dev/null || true
+              echo "🆕 '$CONTENT'"
+              rm -rf *png *mp4 *txt frames/ 2>/dev/null
               echo "$CONTENT" > command_pipe.txt
               
-              for i in {1..180}; do
+              for i in {1..180}; do  # 6 دقیقه
                 if [ -f response.txt ]; then
-                  cat response.txt
+                  echo "$(cat response.txt)"
                   rm -f response.txt command_pipe.txt
                   break
                 fi
                 sleep 2
               done
               
-              FILES=""
+              # Files
               for f in screenshot.png screenshot-full.png screenshot-base64.txt video_*.mp4; do
-                [ -f "$f" ] && FILES="$FILES $f"
+                [ -f "$f" ] && echo "📁 $f ($(ls -lh $f | awk '{print $5}'))"
               done
               
-              if [ -n "$FILES" ]; then
-                git add -f $FILES .gitignore bot.js
-                if ! git diff --staged --quiet; then
-                  git commit -m "🎥 Pipedream Bot | $(date +'%H:%M') | $CONTENT"
-                  git push origin main -f
-                  echo "✅ PUSH OK!"
-                fi
+              git add -f screenshot*.png screenshot-base64.txt video*.mp4 .gitignore bot.js 2>/dev/null || true
+              
+              if ! git diff --staged --quiet; then
+                git commit -m "🎥 Stealth Bot | $(date +'%H:%M') | $CONTENT" || true
+                git push origin main -f || true
+                echo "✅ Git OK!"
               fi
               
               echo "$CONTENT" > last_command.txt
