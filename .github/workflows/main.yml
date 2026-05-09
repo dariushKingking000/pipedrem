@@ -1,4 +1,4 @@
-name: Node-RED Nodes ✅ FIXED
+name: Node-RED Nodes ✅ WORKING
 
 on: 
   push:
@@ -19,47 +19,54 @@ jobs:
       with:
         node-version: '20'
         
-    - name: Install & Prepare Nodes
+    - name: Install REAL Nodes
       run: |
         mkdir -p nodes
         cd nodes
         npm init -y -s
         
-        # Core dashboard ✅
+        # ✅ اینا کار می‌کنن
         npm install node-red-dashboard@3.6.6
+        npm install node-red-node-email
+        npm install node-red-contrib-web-worldmap
         
-        # Webcam ✅
-        npm install node-red-node-ui-webcam@1.3.3
-        
-        # Browser automation (manual prep)
-        npm install puppeteer@latest playwright@latest
-        
-        # Create puppeteer/playwright node folders manually
-        mkdir -p "node-red-contrib-puppeteer" "node-red-contrib-playwright"
-        echo '{"name":"node-red-contrib-puppeteer","node-red":{"nodes":{}},"version":"1.0.0"}' > node-red-contrib-puppeteer/package.json
-        echo '{"name":"node-red-contrib-playwright","node-red":{"nodes":{}},"version":"1.0.0"}' > node-red-contrib-playwright/package.json
-        rsync -a node_modules/puppeteer/ node-red-contrib-puppeteer/
-        rsync -a node_modules/playwright/ node-red-contrib-playwright/
+        # Browser tools (manual)
+        npm install puppeteer playwright --save-optional
 
-    - name: Zip All ✅
+    - name: Create Custom Zips
       run: |
-        cd nodes/node_modules
-        for node in node-red-dashboard node-red-node-ui-webcam node-red-contrib-puppeteer node-red-contrib-playwright; do
-          if [ -d "../$node" ]; then
-            echo "📦 Creating $node.zip"
-            cd ..
-            zip -r "$node.zip" "$node" -x "*/node_modules/*" "*/test*" "*/tests*" >/dev/null 2>&1
-            echo "✅ $(du -h "$node.zip" | cut -f1)"
-          else
-            echo "❌ $node missing"
-          fi
-        done
+        cd nodes
         
+        # Dashboard ✅
+        if [ -d "node_modules/node-red-dashboard" ]; then
+          rsync -a node_modules/node-red-dashboard/ dashboard/
+          zip -r dashboard.zip dashboard -x "*/node_modules/*" >/dev/null
+          echo "✅ dashboard.zip $(du -h dashboard.zip | cut -f1)"
+          rm -rf dashboard
+        fi
+        
+        # Email ✅
+        if [ -d "node_modules/node-red-node-email" ]; then
+          rsync -a node_modules/node-red-node-email/ email/
+          zip -r email.zip email -x "*/node_modules/*" >/dev/null
+          echo "✅ email.zip $(du -h email.zip | cut -f1)"
+          rm -rf email
+        fi
+        
+        # Puppeteer/Playwright bundle
+        mkdir -p browser-tools
+        cp -r node_modules/puppeteer browser-tools/
+        cp -r node_modules/playwright browser-tools/
+        echo '{"name":"browser-tools","version":"1.0.0"}' > browser-tools/package.json
+        zip -r browser-tools.zip browser-tools -x "*/node_modules/*" >/dev/null
+        echo "✅ browser-tools.zip $(du -h browser-tools.zip | cut -f1)"
+        rm -rf browser-tools
+
     - name: Commit
       run: |
+        ls -la *.zip
         git config --local user.name "GitHub Action"
         git config --local user.email "action@github.com"
-        ls -la *.zip
         git add *.zip
-        git commit -m "4x Node-RED nodes ✅ $(date)" || echo "No zips"
+        git commit -m "✅ 3x Node-RED + Browser Tools $(date)" || echo "No files"
         git push
