@@ -1,88 +1,69 @@
-name: Node-RED Nodes ✅ PERFECT
+name: Flask API Status Check
 
-on: 
-  push:
-    branches: [ main ]
-  workflow_dispatch:
-
-permissions:
-  contents: write
+on:
+  schedule:
+    # هر 15 دقیقه یک بار اجرا شود (برای شبیه‌سازی چک کردن منظم)
+    - cron: '*/15 * * * *'
+  workflow_dispatch: # امکان اجرای دستی از طریق دکمه در تب Actions
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  check_api_status:
+    runs-on: ubuntu-latest # سیستم عامل که workflow روی آن اجرا می‌شود
+
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-        
-    - name: Install REAL Nodes
-      run: |
-        mkdir -p nodes
-        cd nodes
-        npm init -y -s
-        
-        # ✅ Working Node-RED nodes
-        npm install node-red-dashboard@3.6.6
-        npm install node-red-node-email
-        npm install node-red-contrib-web-worldmap
+      - name: Checkout code
+        uses: actions/checkout@v3 # چک کردن کد پروژه شما
 
-        # ✅ Browser automation
-        npm install puppeteer playwright --save-optional
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x' # از آخرین نسخه پایتون استفاده کند
 
-    - name: Create Zips in ROOT ✅
-      run: |
-        cd nodes
-        
-        # Move any existing zips
-        mv ../*.zip . 2>/dev/null || true
-        
-        # 1. Dashboard ✅
-        if [ -d "node_modules/node-red-dashboard" ]; then
-          rsync -a node_modules/node-red-dashboard/ dashboard/
-          zip -r ../dashboard.zip dashboard -x "*/node_modules/*" >/dev/null 2>&1
-          echo "✅ dashboard.zip $(du -h ../dashboard.zip | cut -f1)"
-          rm -rf dashboard
-        fi
-        
-        # 2. Email ✅
-        if [ -d "node_modules/node-red-node-email" ]; then
-          rsync -a node_modules/node-red-node-email/ email/
-          zip -r ../email.zip email -x "*/node_modules/*" >/dev/null 2>&1
-          echo "✅ email.zip $(du -h ../email.zip | cut -f1)"
-          rm -rf email
-        fi
-        
-        # 3. Worldmap ✅
-        if [ -d "node_modules/node-red-contrib-web-worldmap" ]; then
-          rsync -a node_modules/node-red-contrib-web-worldmap/ worldmap/
-          zip -r ../worldmap.zip worldmap -x "*/node_modules/*" >/dev/null 2>&1
-          echo "✅ worldmap.zip $(du -h ../worldmap.zip | cut -f1)"
-          rm -rf worldmap
-        fi
-        
-        # 4. Browser Tools (Puppeteer + Playwright) ✅
-        mkdir -p ../browser-tools
-        [ -d "node_modules/puppeteer" ] && rsync -a node_modules/puppeteer/ ../browser-tools/ || true
-        [ -d "node_modules/playwright" ] && rsync -a node_modules/playwright/ ../browser-tools/ || true
-        echo '{"name":"browser-tools","version":"1.0.0"}' > ../browser-tools/package.json
-        cd ..
-        zip -r browser-tools.zip browser-tools -x "*/node_modules/*" >/dev/null 2>&1
-        echo "✅ browser-tools.zip $(du -h browser-tools.zip | cut -f1)"
-        rm -rf browser-tools nodes
+      - name: Install dependencies
+        run: |
+          # اطمینان از نصب کتابخانه requests
+          pip install requests
+          # اگر Flask هم نیاز به نصب داشت (که در این سناریو Flask باید از قبل روی سرور باشه)
+          # pip install Flask
 
-    - name: Commit & Push
-      run: |
-        echo "📁 Files in root:"
-        ls -la *.zip
-        echo "📊 Sizes:"
-        du -h *.zip | sort -hr
-        
-        git config --local user.name "GitHub Action"
-        git config --local user.email "action@github.com"
-        git add *.zip
-        git commit -m "✅ $(ls *.zip | wc -l)x Node-RED zips $(date)" || echo "No new files"
-        git push
+      - name: Run Flask API (Simulated)
+        # این قسمت نیاز به تنظیمات شبکه یا اجرای Flask در یک محیط مجزا دارد
+        # برای سادگی، فرض می‌کنیم Flask از قبل در حال اجراست یا با ابزاری مثل 'serve' بالا میاد
+        # در یک سناریوی واقعی، این بخش پیچیده‌تر خواهد بود
+        # مثلاً ممکن است نیاز باشد Flask را در یک سرویس یا داکر بالا بیاورید
+        # برای این مثال، فرض می‌کنیم Flask از قبل اجرا شده و در دسترس است.
+        # اگر Flask در همین ریپو باشد، می‌توان آن را هم اجرا کرد:
+        # run: python app.py & # اجرای Flask در پس‌زمینه
+
+      - name: Check Flask API Status
+        run: |
+          # اینجا همان کد پایتونی که به من دادید، اجرا می‌شود
+          # اما به جای اجرای مستقیم، آن را در یک فایل موقت ذخیره و اجرا می‌کنیم
+          echo '''import requests
+
+api_url = "http://127.0.0.1:5000/status" # توجه: این آدرس در محیط GitHub Actions متفاوت خواهد بود
+
+try:
+    response = requests.get(api_url)
+    response.raise_for_status()
+
+    print("GitHub Actions Simulation:")
+    print(f"API Status Check: SUCCESS")
+    print(f"Response from API: {response.json()}")
+
+except requests.exceptions.ConnectionError:
+    print("GitHub Actions Simulation:")
+    print(f"API Status Check: FAILED")
+    print(f"Error: Could not connect to {api_url}. Is the Flask app running on the correct host/port?")
+
+except requests.exceptions.HTTPError as e:
+    print("GitHub Actions Simulation:")
+    print(f"API Status Check: FAILED")
+    print(f"HTTP Error: {e}")
+
+except Exception as e:
+    print("GitHub Actions Simulation:")
+    print(f"API Status Check: FAILED")
+    print(f"An unexpected error occurred: {e}")
+''' > check_api.py
+          python check_api.py
