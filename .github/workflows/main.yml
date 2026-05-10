@@ -2,68 +2,69 @@ name: Flask API Status Check
 
 on:
   schedule:
-    # هر 15 دقیقه یک بار اجرا شود (برای شبیه‌سازی چک کردن منظم)
+    # هر 15 دقیقه یک بار اجرا شود
     - cron: '*/15 * * * *'
-  workflow_dispatch: # امکان اجرای دستی از طریق دکمه در تب Actions
+  workflow_dispatch: # امکان اجرای دستی
 
 jobs:
   check_api_status:
-    runs-on: ubuntu-latest # سیستم عامل که workflow روی آن اجرا می‌شود
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3 # چک کردن کد پروژه شما
+        uses: actions/checkout@v3
 
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.x' # از آخرین نسخه پایتون استفاده کند
+          python-version: '3.x'
 
-      - name: Install dependencies
-        run: |
-          # اطمینان از نصب کتابخانه requests
-          pip install requests
-          # اگر Flask هم نیاز به نصب داشت (که در این سناریو Flask باید از قبل روی سرور باشه)
-          # pip install Flask
-
-      - name: Run Flask API (Simulated)
-        # این قسمت نیاز به تنظیمات شبکه یا اجرای Flask در یک محیط مجزا دارد
-        # برای سادگی، فرض می‌کنیم Flask از قبل در حال اجراست یا با ابزاری مثل 'serve' بالا میاد
-        # در یک سناریوی واقعی، این بخش پیچیده‌تر خواهد بود
-        # مثلاً ممکن است نیاز باشد Flask را در یک سرویس یا داکر بالا بیاورید
-        # برای این مثال، فرض می‌کنیم Flask از قبل اجرا شده و در دسترس است.
-        # اگر Flask در همین ریپو باشد، می‌توان آن را هم اجرا کرد:
-        # run: python app.py & # اجرای Flask در پس‌زمینه
+      - name: Install requests library
+        run: pip install requests
 
       - name: Check Flask API Status
+        env:
+          # آدرس API را به عنوان یک متغیر محیطی تعریف کنید
+          # این آدرس باید آدرس واقعی Flask شما باشد که از خارج قابل دسترسی است
+          FLASK_API_URL: http://your-flask-app.com:5000/status # <<<--- این آدرس را جایگزین کنید
         run: |
-          # اینجا همان کد پایتونی که به من دادید، اجرا می‌شود
-          # اما به جای اجرای مستقیم، آن را در یک فایل موقت ذخیره و اجرا می‌کنیم
-          echo '''import requests
+          echo '''
+          import requests
+          import os
 
-api_url = "http://127.0.0.1:5000/status" # توجه: این آدرس در محیط GitHub Actions متفاوت خواهد بود
+          api_url = os.environ.get("FLASK_API_URL") # خواندن آدرس از متغیر محیطی
 
-try:
-    response = requests.get(api_url)
-    response.raise_for_status()
+          if not api_url:
+              print("Error: FLASK_API_URL environment variable not set.")
+              exit(1)
 
-    print("GitHub Actions Simulation:")
-    print(f"API Status Check: SUCCESS")
-    print(f"Response from API: {response.json()}")
+          try:
+              response = requests.get(api_url, timeout=10) # اضافه کردن timeout
+              response.raise_for_status()
 
-except requests.exceptions.ConnectionError:
-    print("GitHub Actions Simulation:")
-    print(f"API Status Check: FAILED")
-    print(f"Error: Could not connect to {api_url}. Is the Flask app running on the correct host/port?")
+              print("GitHub Actions Simulation:")
+              print(f"API Status Check: SUCCESS")
+              print(f"Response from API: {response.json()}")
 
-except requests.exceptions.HTTPError as e:
-    print("GitHub Actions Simulation:")
-    print(f"API Status Check: FAILED")
-    print(f"HTTP Error: {e}")
+          except requests.exceptions.ConnectionError:
+              print("GitHub Actions Simulation:")
+              print(f"API Status Check: FAILED")
+              print(f"Error: Could not connect to {api_url}. Is the Flask app running and accessible?")
 
-except Exception as e:
-    print("GitHub Actions Simulation:")
-    print(f"API Status Check: FAILED")
-    print(f"An unexpected error occurred: {e}")
-''' > check_api.py
+          except requests.exceptions.HTTPError as e:
+              print("GitHub Actions Simulation:")
+              print(f"API Status Check: FAILED")
+              print(f"HTTP Error: {e}")
+
+          except requests.exceptions.Timeout:
+              print("GitHub Actions Simulation:")
+              print(f"API Status Check: FAILED")
+              print(f"Error: Request to {api_url} timed out.")
+
+          except Exception as e:
+              print("GitHub Actions Simulation:")
+              print(f"API Status Check: FAILED")
+              print(f"An unexpected error occurred: {e}")
+          ''' > check_api.py
           python check_api.py
+
