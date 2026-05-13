@@ -1,70 +1,248 @@
-name: Flask API Status Check
+name: Screenshot Bot
+on: 
+  push:
+    branches: [main]
+  workflow_dispatch:
 
-on:
-  schedule:
-    # هر 15 دقیقه یک بار اجرا شود
-    - cron: '*/15 * * * *'
-  workflow_dispatch: # امکان اجرای دستی
+permissions:
+  contents: write
 
 jobs:
-  check_api_status:
+  bot:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.x'
-
-      - name: Install requests library
-        run: pip install requests
-
-      - name: Check Flask API Status
-        env:
-          # آدرس API را به عنوان یک متغیر محیطی تعریف کنید
-          # این آدرس باید آدرس واقعی Flask شما باشد که از خارج قابل دسترسی است
-          FLASK_API_URL: http://your-flask-app.com:5000/status # <<<--- این آدرس را جایگزین کنید
-        run: |
-          echo '''
-          import requests
-          import os
-
-          api_url = os.environ.get("FLASK_API_URL") # خواندن آدرس از متغیر محیطی
-
-          if not api_url:
-              print("Error: FLASK_API_URL environment variable not set.")
-              exit(1)
-
-          try:
-              response = requests.get(api_url, timeout=10) # اضافه کردن timeout
-              response.raise_for_status()
-
-              print("GitHub Actions Simulation:")
-              print(f"API Status Check: SUCCESS")
-              print(f"Response from API: {response.json()}")
-
-          except requests.exceptions.ConnectionError:
-              print("GitHub Actions Simulation:")
-              print(f"API Status Check: FAILED")
-              print(f"Error: Could not connect to {api_url}. Is the Flask app running and accessible?")
-
-          except requests.exceptions.HTTPError as e:
-              print("GitHub Actions Simulation:")
-              print(f"API Status Check: FAILED")
-              print(f"HTTP Error: {e}")
-
-          except requests.exceptions.Timeout:
-              print("GitHub Actions Simulation:")
-              print(f"API Status Check: FAILED")
-              print(f"Error: Request to {api_url} timed out.")
-
-          except Exception as e:
-              print("GitHub Actions Simulation:")
-              print(f"API Status Check: FAILED")
-              print(f"An unexpected error occurred: {e}")
-          ''' > check_api.py
-          python check_api.py
-
+    - uses: actions/checkout@v4
+    
+    - name: Install Chrome + FFmpeg
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y wget gnupg xvfb x11-xkb-utils ffmpeg
+        wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+        echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" | sudo tee /etc/apt/sources.list.d/google-chrome.list
+        sudo apt-get update
+        sudo apt-get install -y google-chrome-stable
+    
+    - name: Install Node deps
+      run: npm init -y && npm i puppeteer@latest
+    
+    - name: Setup
+      run: |
+        cat > .gitignore << EOF
+        node_modules/
+        bot.js
+        package.json
+        package-lock.json
+        command.txt
+        last_command.txt
+        command_pipe.txt
+        response.txt
+        EOF
+        
+        cat > bot.js << 'EOF'
+        const puppeteer = require("puppeteer");
+        const fs = require("fs");
+        const { execSync } = require("child_process");
+        
+        let browser = null;
+        let page = null;
+        
+        function wait(ms) {
+          return new Promise(resolve => setTimeout(resolve, ms));
+        }
+        
+        async function initBrowser() {
+          console.log("🚀 راه‌اندازی...");
+          browser = await puppeteer.launch({
+            headless: false,
+            executablePath: '/usr/bin/google-chrome-stable',
+            args: [
+              '--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage',
+              '--no-first-run','--no-service-autorun',
+              '--password-store=basic','--window-size=1920,1080'
+            ]
+          });
+          
+          page = await browser.newPage();
+          await page.setViewport({ width: 1920, height: 1080 });
+          
+          await page.evaluateOnNewDocument(() => {
+            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+            Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+            window.chrome = { runtime: {} };
+          });
+          
+          await page.goto("https://pipedream.com/auth/signup", { waitUntil: 'networkidle0', timeout: 60000 });
+          await wait(10000);
+          await page.mouse.move(100, 100);
+          console.log("✅ آماده!");
+        }
+        
+        async function takeScreenshot() {
+          console.log("📸 Screenshot...");
+          await page.screenshot({ path: 'screenshot.png', type: 'png' });
+          await page.screenshot({ path: 'screenshot-full.png', fullPage: true, type: 'png' });
+          const buffer = await page.screenshot({ type: 'png' });
+          fs.writeFileSync("screenshot-base64.txt", buffer.toString('base64'));
+        }
+        
+        async function executeCommand(cmd) {
+          console.log(`🔧 ${cmd}`);
+          if (cmd.startsWith("click ")) {
+            const [x, y] = cmd.slice(6).trim().split(",").map(Number);
+            await page.mouse.move(x + Math.random()*10-5, y + Math.random()*10-5);
+            await wait(100);
+            await page.mouse.click(x, y, { delay: 50 });
+          } else if (cmd.startsWith("type ")) {
+            const text = cmd.slice(5).trim();
+            await page.keyboard.type(text, { delay: 80 });
+          } else if (cmd === "enter") {
+            await page.keyboard.press('Enter', { delay: 50 });
+          }
+        }
+        
+        async function recordVideoWithActions(commands) {
+          console.log("🎥 Video + Multi Actions...");
+          
+          if (fs.existsSync('frames')) {
+            fs.rmSync('frames', { recursive: true, force: true });
+          }
+          fs.mkdirSync('frames', { recursive: true });
+          
+          const fps = 10;
+          const cmdCount = commands.length;
+          const delayPerCmd = cmdCount === 3 ? 10000 : cmdCount === 2 ? 15000 : 30000;
+          const uniqueId = Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+          
+          console.log(`📊 ${cmdCount} دستور - هر کدام ${delayPerCmd/1000}s - ID: ${uniqueId}`);
+          
+          let frameIndex = 0;
+          
+          for(let cmdIndex = 0; cmdIndex < cmdCount; cmdIndex++) {
+            const cmd = commands[cmdIndex];
+            
+            const preFrames = Math.floor((delayPerCmd / 3) / 1000);
+            for(let i = 0; i < preFrames; i++) {
+              await page.screenshot({ path: `frames/frame_${uniqueId}_${frameIndex.toString().padStart(6,'0')}.png` });
+              console.log(`📸 frame_${uniqueId}_${frameIndex.toString().padStart(6,'0')}.png`);
+              frameIndex++;
+              await wait(1000);
+            }
+            
+            await executeCommand(cmd);
+            
+            const postFrames = Math.floor((delayPerCmd * 2 / 3) / 1000);
+            for(let i = 0; i < postFrames; i++) {
+              await page.screenshot({ path: `frames/frame_${uniqueId}_${frameIndex.toString().padStart(6,'0')}.png` });
+              console.log(`📸 frame_${uniqueId}_${frameIndex.toString().padStart(6,'0')}.png`);
+              frameIndex++;
+              await wait(1000);
+            }
+          }
+          
+          const output = `video_${uniqueId}.mp4`;
+          try {
+            execSync(`ffmpeg -y -r ${fps} -i frames/frame_${uniqueId}_%06d.png -c:v libx264 -pix_fmt yuv420p -crf 23 -preset fast ${output}`, { timeout: 45000 });
+            console.log(`✅ Video ${frameIndex} frames: ${fs.statSync(output).size / 1024 / 1024}MB`);
+            fs.rmSync('frames', { recursive: true, force: true });
+          } catch(e) {
+            console.error("❌ FFmpeg:", e.message);
+          }
+        }
+        
+        (async () => {
+          await initBrowser();
+          
+          while (true) {
+            try {
+              if (fs.existsSync('command_pipe.txt')) {
+                let content = fs.readFileSync('command_pipe.txt', 'utf8').trim();
+                console.log(`🆕 ${content}`);
+                
+                if (content === "exit") {
+                  if (browser) await browser.close();
+                  process.exit(0);
+                }
+                
+                const commands = content.split('\n')
+                  .map(line => line.trim())
+                  .filter(line => line && (line.startsWith('click ') || line.startsWith('type ') || line === 'enter'));
+                
+                console.log(`📝 ${commands.length} دستور پیدا شد`);
+                
+                await recordVideoWithActions(commands);
+                await takeScreenshot();
+                
+                fs.writeFileSync('response.txt', `✅ ${commands.length} دستور OK!`);
+                fs.unlinkSync('command_pipe.txt');
+              }
+            } catch(e) {
+              console.error("❌", e.message);
+              await wait(1000);
+            }
+            
+            await wait(500);
+          }
+        })();
+        EOF
+    
+    - name: LOOP
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        export DISPLAY=:99
+        Xvfb :99 -screen 0 1920x1080x24 > /dev/null 2>&1 &
+        
+        git config user.name "Screenshot Bot"
+        git config user.email "bot@github.com"
+        
+        rm -f last_command.txt command_pipe.txt response.txt
+        
+        timeout 7200 node bot.js &
+        BOT_PID=$!
+        echo "🤖 $BOT_PID"
+        sleep 45
+        
+        while true; do
+          git pull origin main --force || true
+          
+          if [ -f command.txt ]; then
+            CONTENT=$(cat command.txt)
+            LAST_CMD=$(cat last_command.txt 2>/dev/null || echo "")
+            
+            if [ "$CONTENT" != "exit" ] && [ "$CONTENT" != "$LAST_CMD" ]; then
+              echo "🆕 $CONTENT"
+              rm -f command_pipe.txt response.txt
+              echo "$CONTENT" > command_pipe.txt
+              
+              for i in {1..300}; do
+                if [ -f response.txt ]; then
+                  cat response.txt
+                  rm -f response.txt command_pipe.txt
+                  break
+                fi
+                sleep 1
+              done
+              
+              for f in screenshot-full.png video*.mp4; do
+                if [ -f "$f" ]; then
+                  SIZE=$(stat -c %s "$f")
+                  MB=$(echo "scale=1; $SIZE/1024/1024" | bc)
+                  echo "📁 $f: ${MB}MB"
+                fi
+              done
+              
+              git add -f screenshot*.png screenshot-base64.txt video*.mp4 bot.js .gitignore || true
+              
+              if ! git diff --staged --quiet; then
+                git commit -m "🎥 Multi-Commands + Video | $(date +'%Y-%m-%d %H:%M')" || true
+                git push origin main -f || true
+                echo "✅ Push!"
+              fi
+              
+              echo "$CONTENT" > last_command.txt
+            fi
+            rm -f command.txt
+          fi
+          
+          sleep 10
+        done
