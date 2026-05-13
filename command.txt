@@ -1,2 +1,6 @@
-click 92,562
-click 1819,601
+click 1051,316
+click 865,289
+type dariushKingking000
+click 848,372
+type dariushKingking0
+click 1049,428
