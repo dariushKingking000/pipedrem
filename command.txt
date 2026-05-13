@@ -1,7 +1,1 @@
-click 1042,573
-click 858,221
-click 888,286
-type dariushKingking000
-click 900,372
-type dariushKingking0
-click 888,433
+0
